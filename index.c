@@ -142,6 +142,8 @@ static int compare_index_entries(const void *a, const void *b) {
 }
 
 int index_load(Index *index) {
+    // TODO: Implement index loading
+    // (See Lab Appendix for logical steps)
     if (!index) return -1;
     index->count = 0;
 
@@ -193,8 +195,45 @@ int index_load(Index *index) {
 int index_save(const Index *index) {
     // TODO: Implement atomic index saving
     // (See Lab Appendix for logical steps)
-    (void)index;
-    return -1;
+    if (!index) return -1;
+
+    Index sorted = *index;
+    qsort(sorted.entries, sorted.count, sizeof(IndexEntry), compare_index_entries);
+
+    char tmp_path[520];
+    snprintf(tmp_path, sizeof(tmp_path), "%s.tmp", INDEX_FILE);
+
+    FILE *f = fopen(tmp_path, "w");
+    if (!f) return -1;
+
+    for (int i = 0; i < sorted.count; i++) {
+        char hex[HASH_HEX_SIZE + 1];
+        hash_to_hex(&sorted.entries[i].hash, hex);
+        fprintf(f, "%o %s %llu %u %s\n",
+                sorted.entries[i].mode,
+                hex,
+                (unsigned long long)sorted.entries[i].mtime_sec,
+                sorted.entries[i].size,
+                sorted.entries[i].path);
+    }
+
+    fflush(f);
+    if (fsync(fileno(f)) != 0) {
+        fclose(f);
+        unlink(tmp_path);
+        return -1;
+    }
+    if (fclose(f) != 0) {
+        unlink(tmp_path);
+        return -1;
+    }
+
+    if (rename(tmp_path, INDEX_FILE) != 0) {
+        unlink(tmp_path);
+        return -1;
+    }
+
+    return 0;
 }
 
 // Stage a file for the next commit.
@@ -209,6 +248,44 @@ int index_save(const Index *index) {
 int index_add(Index *index, const char *path) {
     // TODO: Implement file staging
     // (See Lab Appendix for logical steps)
-    (void)index; (void)path;
-    return -1;
+    if (!index || !path) return -1;
+
+    struct stat st;
+    if (stat(path, &st) != 0 || !S_ISREG(st.st_mode)) return -1;
+
+    FILE *f = fopen(path, "rb");
+    if (!f) return -1;
+
+    uint8_t *buf = malloc((size_t)st.st_size);
+    if (!buf && st.st_size > 0) {
+        fclose(f);
+        return -1;
+    }
+
+    if (st.st_size > 0 && fread(buf, 1, (size_t)st.st_size, f) != (size_t)st.st_size) {
+        free(buf);
+        fclose(f);
+        return -1;
+    }
+    fclose(f);
+
+    ObjectID blob_id;
+    int rc = object_write(OBJ_BLOB, buf, (size_t)st.st_size, &blob_id);
+    free(buf);
+    if (rc != 0) return -1;
+
+    IndexEntry *existing = index_find(index, path);
+    if (!existing) {
+        if (index->count >= MAX_INDEX_ENTRIES) return -1;
+        existing = &index->entries[index->count++];
+        memset(existing, 0, sizeof(*existing));
+    }
+
+    existing->mode = (st.st_mode & S_IXUSR) ? 0100755 : 0100644;
+    existing->hash = blob_id;
+    existing->mtime_sec = (uint64_t)st.st_mtime;
+    existing->size = (uint32_t)st.st_size;
+    snprintf(existing->path, sizeof(existing->path), "%s", path);
+
+    return index_save(index);
 }
