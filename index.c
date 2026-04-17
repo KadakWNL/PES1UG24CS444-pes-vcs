@@ -162,6 +162,11 @@ int index_load(Index *index) {
                        &e.size,
                        e.path);
 
+        if (n == EOF) break;
+        if (n != 5) {
+            fclose(f);
+            return -1;
+        }
 
         if (hex_to_hash(hex, &e.hash) != 0) {
             fclose(f);
