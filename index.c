@@ -156,11 +156,12 @@ int index_load(Index *index) {
     while (index->count < MAX_INDEX_ENTRIES) {
         IndexEntry e;
         char hex[HASH_HEX_SIZE + 1];
+        unsigned long long mtime_tmp;
 
-        int n = fscanf(f, "%o %64s %llu %u %511[^\n]\n",
+        int n = fscanf(f, "%o %64s %llu %u %511[^\n]",
                        &e.mode,
                        hex,
-                       (unsigned long long *)&e.mtime_sec,
+                       &mtime_tmp,
                        &e.size,
                        e.path);
 
@@ -169,6 +170,8 @@ int index_load(Index *index) {
             fclose(f);
             return -1;
         }
+
+        e.mtime_sec = (uint64_t)mtime_tmp;
 
         if (hex_to_hash(hex, &e.hash) != 0) {
             fclose(f);
