@@ -66,6 +66,7 @@ int commit_parse(const void *data, size_t len, Commit *commit_out) {
     p = strchr(p, '\n') + 1;  // skip committer line
     p = strchr(p, '\n') + 1;  // skip blank line
 
+    // Message bytes are length-bounded by object size (raw data may not be NUL-terminated).
     size_t used = (size_t)(p - (const char *)data);
     if (used > len) return -1;
 
@@ -202,8 +203,10 @@ int head_update(const ObjectID *new_commit) {
 //
 // Returns 0 on success, -1 on error.
 int commit_create(const char *message, ObjectID *commit_id_out) {
+    // Phase 4: Build commit from staged tree, link parent, store, then advance HEAD.
     if (!message || !commit_id_out) return -1;
 
+    // Snapshot is built from the index (staged state), not from working directory files.
     ObjectID tree_id;
     if (tree_from_index(&tree_id) != 0) return -1;
 
@@ -212,6 +215,7 @@ int commit_create(const char *message, ObjectID *commit_id_out) {
     c.tree = tree_id;
 
     ObjectID parent;
+    // First commit has no parent; later commits chain history.
     if (head_read(&parent) == 0) {
         c.parent = parent;
         c.has_parent = 1;
@@ -234,6 +238,7 @@ int commit_create(const char *message, ObjectID *commit_id_out) {
 
     if (head_update(&new_commit) != 0) return -1;
 
+    // Caller gets new commit id for CLI output.
     *commit_id_out = new_commit;
     return 0;
 }

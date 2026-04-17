@@ -142,8 +142,7 @@ static int compare_index_entries(const void *a, const void *b) {
 }
 
 int index_load(Index *index) {
-    // TODO: Implement index loading
-    // (See Lab Appendix for logical steps)
+    // Phase 3: Parse text index into in-memory entries; missing file means empty index.
     if (!index) return -1;
     index->count = 0;
 
@@ -158,6 +157,7 @@ int index_load(Index *index) {
         char hex[HASH_HEX_SIZE + 1];
         unsigned long long mtime_tmp;
 
+        // Read one logical entry: mode hash mtime size path
         int n = fscanf(f, "%o %64s %llu %u %511[^\n]",
                        &e.mode,
                        hex,
@@ -196,10 +196,10 @@ int index_load(Index *index) {
 //
 // Returns 0 on success, -1 on error.
 int index_save(const Index *index) {
-    // TODO: Implement atomic index saving
-    // (See Lab Appendix for logical steps)
+    // Phase 3: Write sorted index via temp file + fsync + rename.
     if (!index) return -1;
 
+    // Sort a copy so in-memory order from caller is preserved.
     Index *sorted = malloc(sizeof(Index));
     if (!sorted) return -1;
     *sorted = *index;
@@ -226,6 +226,7 @@ int index_save(const Index *index) {
     }
 
     fflush(f);
+    // fsync before rename to make file contents durable.
     if (fsync(fileno(f)) != 0) {
         fclose(f);
         unlink(tmp_path);
@@ -258,8 +259,7 @@ int index_save(const Index *index) {
 //
 // Returns 0 on success, -1 on error.
 int index_add(Index *index, const char *path) {
-    // TODO: Implement file staging
-    // (See Lab Appendix for logical steps)
+    // Phase 3: Stage file by writing blob, updating metadata, and persisting index.
     if (!index || !path) return -1;
 
     struct stat st;
@@ -282,6 +282,7 @@ int index_add(Index *index, const char *path) {
     fclose(f);
 
     ObjectID blob_id;
+    // Content-addressed staging: index stores hash, not file bytes.
     int rc = object_write(OBJ_BLOB, buf, (size_t)st.st_size, &blob_id);
     free(buf);
     if (rc != 0) return -1;
