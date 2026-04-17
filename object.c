@@ -93,7 +93,7 @@ int object_exists(const ObjectID *id) {
 //
 // Returns 0 on success, -1 on error.
 int object_write(ObjectType type, const void *data, size_t len, ObjectID *id_out) {
-    // TODO: Implement
+    // Phase 1: Build canonical object bytes, hash for identity, then atomically persist.
     if (!data || !id_out) return -1;
 
     const char *type_str = NULL;
@@ -118,6 +118,7 @@ int object_write(ObjectType type, const void *data, size_t len, ObjectID *id_out
     ObjectID oid;
     compute_hash(full, full_len, &oid);
 
+    // Deduplication: identical content maps to the same object hash.
     if (object_exists(&oid)) {
         *id_out = oid;
         free(full);
@@ -138,6 +139,7 @@ int object_write(ObjectType type, const void *data, size_t len, ObjectID *id_out
     }
 
     char tmp_path[512];
+    // Temp file is placed in same shard directory so rename stays atomic.
     snprintf(tmp_path, sizeof(tmp_path), "%s/.tmp-%ld-%d", shard_dir, (long)getpid(), rand());
 
     int fd = open(tmp_path, O_CREAT | O_WRONLY | O_TRUNC, 0644);
@@ -177,6 +179,7 @@ int object_write(ObjectType type, const void *data, size_t len, ObjectID *id_out
         return -1;
     }
 
+    // Ensure directory metadata (rename) is durable.
     int dfd = open(shard_dir, O_RDONLY);
     if (dfd >= 0) {
         fsync(dfd);
@@ -211,7 +214,7 @@ int object_write(ObjectType type, const void *data, size_t len, ObjectID *id_out
 // The caller is responsible for calling free(*data_out).
 // Returns 0 on success, -1 on error (file not found, corrupt, etc.).
 int object_read(const ObjectID *id, ObjectType *type_out, void **data_out, size_t *len_out) {
-    // TODO: Implement
+    // Phase 1: Load full object, verify hash integrity, then return parsed payload.
     if (!id || !type_out || !data_out || !len_out) return -1;
 
     char path[512];
@@ -251,6 +254,7 @@ int object_read(const ObjectID *id, ObjectType *type_out, void **data_out, size_
 
     ObjectID check;
     compute_hash(buf, (size_t)sz, &check);
+    // Integrity check: path hash must match recomputed object hash.
     if (memcmp(check.hash, id->hash, HASH_SIZE) != 0) {
         free(buf);
         return -1;
@@ -287,6 +291,7 @@ int object_read(const ObjectID *id, ObjectType *type_out, void **data_out, size_
     }
 
     size_t data_offset = header_len + 1;
+    // Stored payload size in header must exactly match remaining file bytes.
     if (data_offset + payload_size != (size_t)sz) {
         free(buf);
         return -1;
