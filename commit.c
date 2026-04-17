@@ -33,7 +33,6 @@ int object_read(const ObjectID *id, ObjectType *type_out, void **data_out, size_
 
 // Parse raw commit data into a Commit struct.
 int commit_parse(const void *data, size_t len, Commit *commit_out) {
-    (void)len;
     const char *p = (const char *)data;
     char hex[HASH_HEX_SIZE + 1];
 
@@ -67,7 +66,16 @@ int commit_parse(const void *data, size_t len, Commit *commit_out) {
     p = strchr(p, '\n') + 1;  // skip committer line
     p = strchr(p, '\n') + 1;  // skip blank line
 
-    snprintf(commit_out->message, sizeof(commit_out->message), "%s", p);
+    size_t used = (size_t)(p - (const char *)data);
+    if (used > len) return -1;
+
+    size_t msg_len = len - used;
+    if (msg_len >= sizeof(commit_out->message)) {
+        msg_len = sizeof(commit_out->message) - 1;
+    }
+
+    memcpy(commit_out->message, p, msg_len);
+    commit_out->message[msg_len] = '\0';
     return 0;
 }
 
