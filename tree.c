@@ -142,6 +142,7 @@ static int starts_with_dir(const char *path, const char *dir_prefix) {
 }
 
 static int build_tree_level(const ScopedEntry *scoped, int scoped_count, ObjectID *out_id) {
+    // Phase 2: Construct one tree level from path suffixes, recurse for subdirectories.
     Tree tree;
     tree.count = 0;
 
@@ -153,6 +154,7 @@ static int build_tree_level(const ScopedEntry *scoped, int scoped_count, ObjectI
         const char *slash = strchr(s, '/');
 
         if (!slash) {
+            // Leaf file at this level.
             if (tree.count >= MAX_TREE_ENTRIES) return -1;
             TreeEntry *te = &tree.entries[tree.count++];
             te->mode = scoped[i].entry->mode;
@@ -177,6 +179,7 @@ static int build_tree_level(const ScopedEntry *scoped, int scoped_count, ObjectI
         }
         if (already) continue;
 
+        // Emit each directory name once at this level.
         snprintf(seen_dirs[seen_count++], sizeof(seen_dirs[0]), "%s", dirname);
 
         ScopedEntry child[MAX_INDEX_ENTRIES];
@@ -189,6 +192,7 @@ static int build_tree_level(const ScopedEntry *scoped, int scoped_count, ObjectI
 
             size_t sj_dlen = (size_t)(sj_slash - sj);
             if (sj_dlen == dlen && strncmp(sj, dirname, dlen) == 0) {
+                // Child receives suffix after "dirname/" for next recursion level.
                 child[child_count].entry = scoped[j].entry;
                 child[child_count].suffix = sj_slash + 1;
                 child_count++;
@@ -198,6 +202,7 @@ static int build_tree_level(const ScopedEntry *scoped, int scoped_count, ObjectI
         ObjectID child_id;
         if (build_tree_level(child, child_count, &child_id) != 0) return -1;
 
+        // Directory entry points to a subtree object.
         if (tree.count >= MAX_TREE_ENTRIES) return -1;
         TreeEntry *te = &tree.entries[tree.count++];
         te->mode = 0040000;
@@ -215,8 +220,7 @@ static int build_tree_level(const ScopedEntry *scoped, int scoped_count, ObjectI
 }
 
 int tree_from_index(ObjectID *id_out) {
-    // TODO: Implement recursive tree building
-    // (See Lab Appendix for logical steps)
+    // Phase 2: Load staged index entries and emit a root tree object.
     if (!id_out) return -1;
 
     Index idx;
@@ -224,6 +228,7 @@ int tree_from_index(ObjectID *id_out) {
 
     ScopedEntry scoped[MAX_INDEX_ENTRIES];
     for (int i = 0; i < idx.count; i++) {
+        // Start recursion with full indexed path as suffix.
         scoped[i].entry = &idx.entries[i];
         scoped[i].suffix = idx.entries[i].path;
     }
